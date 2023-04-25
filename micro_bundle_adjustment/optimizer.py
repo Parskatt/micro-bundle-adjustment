@@ -1,5 +1,5 @@
 import torch
-from functorch import jacrev, vmap, jacfwd
+from torch.func import jacrev, vmap, jacfwd
 from einops import einsum
 
 
