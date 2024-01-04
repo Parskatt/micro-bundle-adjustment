@@ -1,6 +1,6 @@
 import torch
-import kornia
-from micro_bundle_adjustment import bundle_adjust, angle_axis_to_rotation_matrix
+from kornia.geometry import axis_angle_to_rotation_matrix
+from micro_bundle_adjustment import bundle_adjust
 
 
 def projection(X, r, t):
@@ -10,7 +10,7 @@ def projection(X, r, t):
     if len(r.shape) == 1:
         r = r.expand(N,D)
         t = t.expand(N,D)
-    R = angle_axis_to_rotation_matrix(r)
+    R = axis_angle_to_rotation_matrix(r)
     x = (R @ X[...,None]) + t[...,None]
     x = x[...,0]
     return x[...,:2]/x[...,[2]]
@@ -21,7 +21,7 @@ def gold_standard_residuals(X, r, t, x_a, x_b):
     return torch.cat((r_a, r_b), dim=1)
 
 if __name__ == "__main__":
-    N = 1_000_000
+    N = 100_000
     dtype = torch.float32
     device = "cuda"
     X = torch.rand(N, 3).to(device=device,dtype=dtype)
@@ -49,4 +49,4 @@ if __name__ == "__main__":
     X_error_opt = (X-X_hat).norm(dim=-1).mean()
     X_error_init = (noisy_scene_points-X).norm(dim=-1).mean()
     
-    print(f"Errors: {r_error_init=} {r_error_opt=} {t_error_init=} {t_error_opt=} {X_error_init=} {X_error_opt=}")
+    print(f"Residuals: {r_error_init=} {r_error_opt=} {t_error_init=} {t_error_opt=} {X_error_init=} {X_error_opt=}")
