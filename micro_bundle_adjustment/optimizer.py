@@ -25,7 +25,7 @@ def schur_solve(cam_block: torch.Tensor, cross_block: torch.Tensor, point_block:
     return camera_params, point_coordinates
 
 def lm_optimize(f, X_0, theta_0, observations, num_steps = 100, L_0 = 10, device = "cuda" , dtype = torch.float64):
-    
+    # See https://en.wikipedia.org/wiki/Levenberg%E2%80%93Marquardt_algorithm for details
     N, D = X_0.shape
     K = N # Assume num observations is equal to num 3D points
     M = len(observations)
