@@ -14,11 +14,12 @@ def schur_solve(cam_block: torch.Tensor, cross_block: torch.Tensor, point_block:
     point_block_inv = torch.linalg.inv(point_block) # N, D, D
     rhs = einsum(point_block_inv, cross_block, "k d1 d2, k m2 th2 d2 -> k m2 th2 d1")
     BTA_invB = einsum(cross_block, rhs, "k m1 th1 d1, k m2 th2 d1 -> m1 th1 m2 th2").reshape(M*th, M*th)
-    S = torch.block_diag(*cam_block)#  TODO: should do - BTA_invB but this ruins optimization somehow, there is a bug
+    S = torch.block_diag(*cam_block) - BTA_invB
     
     part_of_camera_rhs = einsum(point_block_inv, g_points,"n d1 d2, n d2 -> n d1")
-    camera_rhs = (g_cam + einsum(cross_block, part_of_camera_rhs, "n m th d1, n d1 -> m th")).reshape(M*th)
+    camera_rhs = (g_cam - einsum(cross_block, part_of_camera_rhs, "n m th d1, n d1 -> m th")).reshape(M*th)
     camera_params = torch.linalg.solve(S, camera_rhs).reshape(M, th)
+    
     points_rhs = g_points - einsum(cross_block, camera_params, "n m th d2, m th -> n d2")
     point_coordinates = einsum(point_block_inv, points_rhs,"n d1 d2, n d2 -> n d1")
     return camera_params, point_coordinates
@@ -62,9 +63,9 @@ def lm_optimize(f, X_0, theta_0, observations, num_steps = 100, L_0 = 10, device
         # For the points we are instead independent over n, and matmul over the images
         points_block = einsum(J_x, J_x, "n m obs d1, n m obs d2 -> n d1 d2") + damp_x
         # For the cross terms (since we use k=n) we have that each observation for each camera maps to each 3D point, so we retain k and m
-        cross_block = einsum(J_theta, J_x, "k m obs th, k m obs d -> k m th d")
+        cross_block = einsum(J_theta, J_x, "k m obs th, k m obs d -> k m th d") # k d, m th
         
-        # Gradient of cams by chain rule is dr/dtheta * dl/dr, hence m,th remain 
+        # Gradient of cams by chain rule is dr/dtheta * dl/dr, hence m,th remain
         g_theta = -einsum(J_theta,  residuals, "k m obs th, k m obs -> m th")
         # Gradient of points by chain rule is dr/dx * dl/dr, hence n,x remain 
         g_points = -einsum(J_x,  residuals, "n m obs d, n m obs -> n d")

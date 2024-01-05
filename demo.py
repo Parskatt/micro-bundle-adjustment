@@ -14,7 +14,7 @@ def projection(X, r, t):
 
 def gold_standard_residuals(X, theta, x_im):
     r, t = theta.chunk(2)
-    r_im = x_im - projection(X, r, t)
+    r_im = projection(X, r, t) - x_im
     return r_im
 
 if __name__ == "__main__":

@@ -9,8 +9,8 @@ Despite being less than 100 lines of code, it can handle 10^6 3D points with eas
 
 # TODO List
 - [x] Example with residual function
-- [ ] Generalize implementation to K-views
-- [ ] Clean up and document code
+- [x] Generalize implementation to K-views
+- [1/2] Clean up and document code
 
 
 # Usage
