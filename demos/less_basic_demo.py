@@ -24,13 +24,15 @@ if __name__ == "__main__":
     X_0 = X + torch.randn_like(X).clamp(-1,1)*0.05
     print(f"Residuals opt: {(X_0-X).norm(dim=-1).mean()=}")
     
-    noisy_f = f  + torch.randn_like(f).clamp(-1,1)*5
-    noisy_principal_point = principal_point + torch.randn_like(principal_point).clamp(-1,1)*5
+    noisy_f = f  + torch.randn_like(f).clamp(-1,1)*2
+    noisy_principal_point = principal_point + torch.randn_like(principal_point).clamp(-1,1)*2
     noisy_r = r + torch.randn_like(r).clamp(-1,1)*0.01
     noisy_t = t + torch.randn_like(t).clamp(-1,1)*0.5
+    noisy_k = torch.randn_like(f).clamp(-1,1)*0.01
         
     with torch.no_grad():
-        X_hat, theta_hat = optimize_simple_radial(X_0, noisy_f, noisy_principal_point, noisy_r, noisy_t, observations, 
+        X_hat, theta_hat = optimize_simple_radial(X_0, noisy_f, noisy_principal_point, noisy_k, noisy_r, noisy_t, 
+                                                  observations, 
                                                   dtype=dtype, L_0 = 1e-2, num_steps = 5)
         
     print(theta_hat)
