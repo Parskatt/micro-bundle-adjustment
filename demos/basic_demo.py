@@ -1,25 +1,12 @@
 import torch
 from torch.func import vmap
 from kornia.geometry import axis_angle_to_rotation_matrix, relative_camera_motion, rotation_matrix_to_axis_angle
-from micro_bundle_adjustment import lm_optimize
+from micro_bundle_adjustment.api import projection, optimize_calibrated
 
-
-def projection(X, r, t):
-    R = axis_angle_to_rotation_matrix(r[None])[0]
-    if len(X.shape) > 1:#TODO: don't want this
-        x = (R @ X.mT).mT + t[None]
-    else:        
-        x = (R @ X) + t
-    return x[...,:2]/x[...,[2]]
-
-def gold_standard_residuals(X, theta, x_im):
-    r, t = theta.chunk(2)
-    r_im = projection(X, r, t) - x_im
-    return r_im
 
 if __name__ == "__main__":
-    N = 100_000
-    dtype = torch.float64
+    N = 1_000_000
+    dtype = torch.float32
     device = "cuda"
     X = torch.randn(N, 3).to(device=device,dtype=dtype)
     X[...,2] = X[...,2] + 10
@@ -36,11 +23,10 @@ if __name__ == "__main__":
     X_0 = X + torch.randn_like(X).clamp(-1,1)*0.05
     noisy_r = r + torch.randn_like(r).clamp(-1,1)*0.01
     noisy_t = t + torch.randn_like(t).clamp(-1,1)*0.5
-    theta_0 = torch.cat((noisy_r, noisy_t), dim = -1)
     
     with torch.no_grad():
-        X_hat, theta_hat = lm_optimize(gold_standard_residuals, X_0, theta_0, observations, dtype=dtype, L_0 = 1e-2, num_steps = 20)
-        
+        X_hat, theta_hat = optimize_calibrated(X_0, noisy_r, noisy_t, observations, dtype=dtype, L_0 = 1e-2, num_steps = 5)
+
     R = axis_angle_to_rotation_matrix(r)
     R_rel, t_rel = relative_camera_motion(R[:1], t[:1,:,None], R[1:], t[1:,:,None])
     r_rel = rotation_matrix_to_axis_angle(R_rel)

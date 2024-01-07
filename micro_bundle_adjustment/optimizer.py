@@ -1,8 +1,9 @@
 import torch
 from torch.func import jacrev, vmap, jacfwd
 from einops import einsum
+from typing import Callable
 
-
+#@torch.compile(disable = sys.platform == "windows" or True)
 def schur_solve(cam_block: torch.Tensor, cross_block: torch.Tensor, point_block: torch.Tensor, g_cam: torch.Tensor, g_points: torch.Tensor):
     N, D, _ = point_block.shape # N, D, D
     M, th, _ = cam_block.shape # M, th, th
@@ -24,6 +25,33 @@ def schur_solve(cam_block: torch.Tensor, cross_block: torch.Tensor, point_block:
     point_coordinates = einsum(point_block_inv, points_rhs,"n d1 d2, n d2 -> n d1")
     return camera_params, point_coordinates
 
+def compute_jacobians_residuals_and_loss(jacobian_operator_x, jacobian_operator_theta,
+                      observations, theta, f, X, 
+                      K, N, M, D, C, device = "cuda", dtype = torch.float32):
+    # Create accumulator for x jacobians, each 3D point projects into (assumed) all images
+    J_x = torch.zeros((N, M, 2, D), device = device, dtype = dtype)# TODO: obviously each point X is not seen in every image
+    # Accumulator for theta jacobians, each theta produces residuals in its own image 
+    J_theta = torch.zeros((K, M,  2, C), device = device, dtype = dtype)
+    
+    # Residuals
+    loss = 0
+    residuals = torch.zeros((K, M, 2), device = device, dtype = dtype)
+    for image_idx in range(len(observations)):
+        x_im, inds = observations[image_idx]
+        theta_im = theta[image_idx]
+        residuals_im = f(X[inds], theta_im, x_im) # list with residuals for each image
+        loss += (residuals_im**2).sum()
+        residuals[inds, image_idx] = residuals_im
+        J_x[inds, image_idx] = jacobian_operator_x(X[inds], theta_im, x_im)
+        J_theta[inds, image_idx] = jacobian_operator_theta(X[inds], theta_im, x_im)
+    return J_x, J_theta, residuals, loss
+
+#@torch.compile(disable = sys.platform == "windows" or True)
+def compute_jacobian_operators(f) -> tuple[Callable, Callable]:
+    jacobian_operator_x = vmap(jacrev(f, 0), in_dims = (0, None, 0))
+    jacobian_operator_theta = jacfwd(f, 1)
+    return jacobian_operator_x, jacobian_operator_theta
+
 def lm_optimize(f, X_0, theta_0, observations, num_steps = 100, L_0 = 10, device = "cuda" , dtype = torch.float64):
     # See https://en.wikipedia.org/wiki/Levenberg%E2%80%93Marquardt_algorithm for details
     N, D = X_0.shape
@@ -34,26 +62,16 @@ def lm_optimize(f, X_0, theta_0, observations, num_steps = 100, L_0 = 10, device
     theta = theta_0.clone()
     L = L_0
     
-    jacobian_operator_x = vmap(jacrev(f, 0), in_dims = (0, None, 0))
-    jacobian_operator_theta = jacfwd(f, 1)
+    jacobian_operator_x, jacobian_operator_theta = compute_jacobian_operators(f)
     
     for step in range(num_steps):
-        # Create accumulator for x jacobians, each 3D point projects into (assumed) all images
-        J_x = torch.zeros((N, M, 2, D), device = device, dtype = dtype)# TODO: obviously each point X is not seen in every image
-        # Accumulator for theta jacobians, each theta produces residuals in its own image 
-        J_theta = torch.zeros((K, M,  2, C), device = device, dtype = dtype)
         
-        # Residuals
-        loss = 0
-        residuals = torch.zeros((K, M, 2), device = device, dtype = dtype)
-        for image_idx in range(len(observations)):
-            x_im, inds = observations[image_idx]
-            theta_im = theta[image_idx]
-            residuals_im = f(X[inds], theta_im, x_im) # list with residuals for each image
-            loss += (residuals_im**2).sum()
-            residuals[inds, image_idx] = residuals_im
-            J_x[inds, image_idx] = jacobian_operator_x(X[inds], theta_im, x_im)
-            J_theta[inds, image_idx] = jacobian_operator_theta(X[inds], theta_im, x_im)
+        J_x, J_theta, residuals, loss = compute_jacobians_residuals_and_loss(
+            jacobian_operator_x, jacobian_operator_theta,
+            observations, theta, f, X, 
+            K, N, M, D, C, 
+            device = device, dtype = dtype)
+        
         damp_x = L * torch.eye(D, device = device, dtype = dtype)[None]
         damp_theta = L * torch.eye(C, device = device, dtype = dtype)[None]
         
